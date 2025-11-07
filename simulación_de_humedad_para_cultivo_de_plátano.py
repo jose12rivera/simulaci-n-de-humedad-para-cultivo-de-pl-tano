@@ -103,13 +103,34 @@ class SimuladorPlatano:
         tk.Label(parcela_frame, text="🏞️ VISTA DE LA PARCELA", 
                 font=('Arial', 16, 'bold'), bg='#3a6519', fg='white').pack(pady=10)
         
-        # Canvas para dibujar la parcela
-        self.parcela_canvas = tk.Canvas(parcela_frame, bg='#5a8c2f', highlightthickness=0,
-                                       width=600, height=500)
+        # Frame con scroll para la parcela
+        parcela_container = tk.Frame(parcela_frame, bg='#3a6519')
+        parcela_container.pack(fill=tk.BOTH, expand=True)
+        
+        # Canvas y scrollbar para la parcela
+        canvas_parcela = tk.Canvas(parcela_container, bg='#3a6519', highlightthickness=0)
+        scrollbar_parcela = tk.Scrollbar(parcela_container, orient="vertical", command=canvas_parcela.yview)
+        
+        self.scrollable_parcela = tk.Frame(canvas_parcela, bg='#3a6519')
+        
+        self.scrollable_parcela.bind(
+            "<Configure>",
+            lambda e: canvas_parcela.configure(scrollregion=canvas_parcela.bbox("all"))
+        )
+        
+        canvas_parcela.create_window((0, 0), window=self.scrollable_parcela, anchor="nw")
+        canvas_parcela.configure(yscrollcommand=scrollbar_parcela.set)
+        
+        canvas_parcela.pack(side="left", fill="both", expand=True)
+        scrollbar_parcela.pack(side="right", fill="y")
+        
+        # Canvas para dibujar la parcela dentro del frame scrollable
+        self.parcela_canvas = tk.Canvas(self.scrollable_parcela, bg='#5a8c2f', highlightthickness=0,
+                                       width=600, height=600)
         self.parcela_canvas.pack(fill=tk.BOTH, expand=True, pady=10)
         
         # Frame para controles de riego y siembra
-        controles_frame = tk.Frame(parcela_frame, bg='#3a6519')
+        controles_frame = tk.Frame(self.scrollable_parcela, bg='#3a6519')
         controles_frame.pack(fill=tk.X, pady=10)
         
         # Pileta de agua
@@ -155,6 +176,15 @@ class SimuladorPlatano:
                                             font=('Arial', 11, 'bold'), bg='#4a7c1f', fg='#ffeb3b')
         self.estado_cultivo_label.pack(side=tk.RIGHT, padx=20)
         
+        # Botón para recargar agua
+        recarga_frame = tk.Frame(pileta_frame, bg='#4a7c1f')
+        recarga_frame.pack(fill=tk.X, pady=5)
+        
+        tk.Button(recarga_frame, text="💦 RECARGAR AGUA", 
+                 command=self.recargar_agua,
+                 bg='#00bcd4', fg='white', font=('Arial', 11, 'bold'),
+                 relief=tk.RAISED, bd=3, cursor='hand2', width=20).pack(pady=5)
+        
         # Dibujar la parcela inicial
         self.dibujar_parcela()
     
@@ -162,12 +192,8 @@ class SimuladorPlatano:
         """Dibuja la representación visual de la parcela"""
         self.parcela_canvas.delete("all")
         
-        canvas_width = self.parcela_canvas.winfo_width()
-        canvas_height = self.parcela_canvas.winfo_height()
-        
-        if canvas_width <= 1:  # Si el canvas no está renderizado aún
-            canvas_width = 600
-            canvas_height = 500
+        canvas_width = 600
+        canvas_height = 600
         
         # Dibujar el canal central
         canal_x = canvas_width // 2
@@ -198,9 +224,7 @@ class SimuladorPlatano:
     
     def dibujar_sensores_lado(self, x_base, lado):
         """Dibuja los sensores de un lado específico"""
-        canvas_height = self.parcela_canvas.winfo_height()
-        if canvas_height <= 1:
-            canvas_height = 500
+        canvas_height = 600
         
         # Calcular qué sensores pertenecen a este lado
         sensores_lado = []
@@ -243,7 +267,7 @@ class SimuladorPlatano:
                                            font=('Arial', 7), fill='white')
             
             # Línea conectando al canal (simulando tubería de riego)
-            canal_x = self.parcela_canvas.winfo_width() // 2
+            canal_x = 300
             if lado == 'izquierdo':
                 self.parcela_canvas.create_line(x_base + radio_sensor, y,
                                                canal_x - 15, y,
@@ -255,12 +279,8 @@ class SimuladorPlatano:
     
     def dibujar_pileta_agua(self):
         """Dibuja la pileta de agua"""
-        canvas_width = self.parcela_canvas.winfo_width()
-        canvas_height = self.parcela_canvas.winfo_height()
-        
-        if canvas_width <= 1:
-            canvas_width = 600
-            canvas_height = 500
+        canvas_width = 600
+        canvas_height = 600
         
         # Posición de la pileta (abajo a la derecha)
         pileta_x = canvas_width - 100
@@ -285,19 +305,15 @@ class SimuladorPlatano:
                                        fill='white')
         
         # Tuberías de conexión a los lados
-        canal_x = canvas_width // 2
+        canal_x = 300
         self.parcela_canvas.create_line(pileta_x, pileta_y + pileta_alto//2,
                                        canal_x, pileta_y + pileta_alto//2,
                                        fill='#888888', width=2)
     
     def dibujar_platanos(self):
         """Dibuja los plátanos en la parcela"""
-        canvas_width = self.parcela_canvas.winfo_width()
-        canvas_height = self.parcela_canvas.winfo_height()
-        
-        if canvas_width <= 1:
-            canvas_width = 600
-            canvas_height = 500
+        canvas_width = 600
+        canvas_height = 600
         
         canal_x = canvas_width // 2
         
@@ -350,11 +366,16 @@ class SimuladorPlatano:
         graficos_tab = tk.Frame(notebook, bg='#2d5016')
         notebook.add(graficos_tab, text='📊 Gráficos')
         
+        # Pestaña 3: Estadísticas Detalladas
+        stats_tab = tk.Frame(notebook, bg='#2d5016')
+        notebook.add(stats_tab, text='📈 Estadísticas')
+        
         self.crear_pestana_informacion(info_tab)
         self.crear_pestana_graficos(graficos_tab)
+        self.crear_pestana_estadisticas(stats_tab)
     
     def crear_pestana_informacion(self, parent):
-        """Crea la pestaña de información"""
+        """Crea la pestaña de información con scroll"""
         # Frame con scroll
         canvas = tk.Canvas(parent, bg='#2d5016', highlightthickness=0)
         scrollbar = tk.Scrollbar(parent, orient="vertical", command=canvas.yview)
@@ -386,21 +407,22 @@ class SimuladorPlatano:
         self.clima_label.pack(anchor=tk.W)
         
         # Información del cultivo
-        if self.platano_sembrado:
-            cultivo_frame = tk.LabelFrame(scrollable_frame, text="🌱 ESTADO DEL CULTIVO", 
+        self.cultivo_frame = tk.LabelFrame(scrollable_frame, text="🌱 ESTADO DEL CULTIVO", 
                                         font=('Arial', 12, 'bold'), bg='#4a7c1f', fg='white',
                                         padx=15, pady=15)
-            cultivo_frame.pack(fill=tk.X, padx=10, pady=10)
-            
-            etapas = {1: "Germinación", 2: "Crecimiento", 3: "Maduración"}
-            etapa_text = etapas.get(self.etapa_crecimiento, "Desconocida")
-            
-            tk.Label(cultivo_frame, text=f"Etapa: {etapa_text}", 
-                    font=('Arial', 11, 'bold'), bg='#4a7c1f', fg='#ffeb3b').pack(anchor=tk.W)
-            tk.Label(cultivo_frame, text=f"Días desde siembra: {self.dias_desde_siembra}", 
-                    font=('Arial', 11), bg='#4a7c1f', fg='white').pack(anchor=tk.W)
-            tk.Label(cultivo_frame, text=f"Próxima etapa en: {max(0, 30 - self.dias_desde_siembra)} días", 
-                    font=('Arial', 11), bg='#4a7c1f', fg='white').pack(anchor=tk.W)
+        self.cultivo_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        self.etapa_label = tk.Label(self.cultivo_frame, text="Estado: No sembrado", 
+                                   font=('Arial', 11, 'bold'), bg='#4a7c1f', fg='#ffeb3b')
+        self.etapa_label.pack(anchor=tk.W)
+        
+        self.dias_label = tk.Label(self.cultivo_frame, text="", 
+                                  font=('Arial', 11), bg='#4a7c1f', fg='white')
+        self.dias_label.pack(anchor=tk.W)
+        
+        self.proxima_label = tk.Label(self.cultivo_frame, text="", 
+                                     font=('Arial', 11), bg='#4a7c1f', fg='white')
+        self.proxima_label.pack(anchor=tk.W)
         
         # Controles de simulación
         control_frame = tk.LabelFrame(scrollable_frame, text="🎮 CONTROLES DE SIMULACIÓN", 
@@ -437,13 +459,10 @@ class SimuladorPlatano:
                 # Color según estado
                 if sensor_data['humedad'] < self.humedad_ideal_min:
                     color = '#ff9800'
-                    estado = "BAJA"
                 elif sensor_data['humedad'] > self.humedad_ideal_max:
                     color = '#f44336'
-                    estado = "ALTA"
                 else:
                     color = '#4caf50'
-                    estado = "IDEAL"
                 
                 sensor_text = f"S{sensor_id+1}: {sensor_data['humedad']}%"
                 lbl = tk.Label(area_frame, text=sensor_text, font=('Arial', 8),
@@ -464,10 +483,26 @@ class SimuladorPlatano:
                     bg='#4a7c1f', fg='white').pack(side=tk.LEFT, padx=5)
     
     def crear_pestana_graficos(self, parent):
-        """Crea la pestaña de gráficos"""
-        # Notebook para gráficos
-        graficos_notebook = ttk.Notebook(parent)
-        graficos_notebook.pack(fill=tk.BOTH, expand=True)
+        """Crea la pestaña de gráficos con scroll"""
+        # Frame con scroll para gráficos
+        canvas_graficos = tk.Canvas(parent, bg='#2d5016', highlightthickness=0)
+        scrollbar_graficos = tk.Scrollbar(parent, orient="vertical", command=canvas_graficos.yview)
+        scrollable_graficos = tk.Frame(canvas_graficos, bg='#2d5016')
+        
+        scrollable_graficos.bind(
+            "<Configure>",
+            lambda e: canvas_graficos.configure(scrollregion=canvas_graficos.bbox("all"))
+        )
+        
+        canvas_graficos.create_window((0, 0), window=scrollable_graficos, anchor="nw")
+        canvas_graficos.configure(yscrollcommand=scrollbar_graficos.set)
+        
+        canvas_graficos.pack(side="left", fill="both", expand=True)
+        scrollbar_graficos.pack(side="right", fill="y")
+        
+        # Notebook para gráficos dentro del frame scrollable
+        graficos_notebook = ttk.Notebook(scrollable_graficos)
+        graficos_notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
         # Pestaña de gráfico de barras
         bar_frame = tk.Frame(graficos_notebook, bg='#2d5016')
@@ -481,15 +516,37 @@ class SimuladorPlatano:
         pred_frame = tk.Frame(graficos_notebook, bg='#2d5016')
         graficos_notebook.add(pred_frame, text='🔮 Predicción')
         
-        # Canvas para gráficos
-        self.bar_canvas = tk.Canvas(bar_frame, bg='#2d5016', highlightthickness=0)
+        # Canvas para gráficos con tamaño fijo
+        self.bar_canvas = tk.Canvas(bar_frame, bg='#2d5016', highlightthickness=0, width=650, height=500)
         self.bar_canvas.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        self.pie_canvas = tk.Canvas(pie_frame, bg='#2d5016', highlightthickness=0)
+        self.pie_canvas = tk.Canvas(pie_frame, bg='#2d5016', highlightthickness=0, width=650, height=500)
         self.pie_canvas.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        self.pred_canvas = tk.Canvas(pred_frame, bg='#2d5016', highlightthickness=0)
+        self.pred_canvas = tk.Canvas(pred_frame, bg='#2d5016', highlightthickness=0, width=650, height=500)
         self.pred_canvas.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+    
+    def crear_pestana_estadisticas(self, parent):
+        """Crea la pestaña de estadísticas detalladas con scroll"""
+        # Frame con scroll para estadísticas
+        canvas_stats = tk.Canvas(parent, bg='#2d5016', highlightthickness=0)
+        scrollbar_stats = tk.Scrollbar(parent, orient="vertical", command=canvas_stats.yview)
+        scrollable_stats = tk.Frame(canvas_stats, bg='#2d5016')
+        
+        scrollable_stats.bind(
+            "<Configure>",
+            lambda e: canvas_stats.configure(scrollregion=canvas_stats.bbox("all"))
+        )
+        
+        canvas_stats.create_window((0, 0), window=scrollable_stats, anchor="nw")
+        canvas_stats.configure(yscrollcommand=scrollbar_stats.set)
+        
+        canvas_stats.pack(side="left", fill="both", expand=True)
+        scrollbar_stats.pack(side="right", fill="y")
+        
+        # Canvas para estadísticas
+        self.stats_canvas = tk.Canvas(scrollable_stats, bg='#2d5016', highlightthickness=0, width=650, height=800)
+        self.stats_canvas.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
     
     def sembrar_platano(self):
         """Acción de sembrar plátano"""
@@ -501,7 +558,10 @@ class SimuladorPlatano:
         self.etapa_crecimiento = 1  # Comienza en germinación
         self.dias_desde_siembra = 0
         self.btn_sembrar.config(text="🌱 PLÁTANO SEMBRADO", state=tk.DISABLED, bg='#795548')
-        self.estado_cultivo_label.config(text="Estado: Germinación")
+        
+        # ACTUALIZAR EL ESTADO A "Plátanos sembrados" - CORRECCIÓN APLICADA
+        self.estado_cultivo_label.config(text="Estado: Plátanos sembrados")
+        self.actualizar_info_cultivo()
         
         self.dibujar_parcela()
         messagebox.showinfo("Siembra Exitosa", 
@@ -509,6 +569,13 @@ class SimuladorPlatano:
                           "🌱 Etapa: Germinación\n"
                           "⏰ Próxima etapa en: 30 días\n"
                           "💧 Mantén la humedad entre 65%-80%")
+    
+    def recargar_agua(self):
+        """Recarga la pileta de agua"""
+        self.nivel_agua = 100
+        self.nivel_label.config(text=f"Nivel de agua: {self.nivel_agua}%")
+        self.dibujar_parcela()
+        messagebox.showinfo("Agua Recargada", "✅ La pileta ha sido recargada al 100%")
     
     def regar_lado(self, lado):
         """Riega un lado específico de la parcela"""
@@ -534,6 +601,7 @@ class SimuladorPlatano:
         # Actualizar visualización
         self.dibujar_parcela()
         self.actualizar_graficos()
+        self.actualizar_estadisticas()
         
         messagebox.showinfo("Riego Completado", 
                           f"✅ Lado {lado.upper()} regado correctamente\n"
@@ -555,12 +623,8 @@ class SimuladorPlatano:
             # Actualizar etapa de crecimiento
             if self.dias_desde_siembra >= 90:
                 self.etapa_crecimiento = 3  # Maduración
-                self.estado_cultivo_label.config(text="Estado: Maduración - ¡Listo para cosechar!")
             elif self.dias_desde_siembra >= 60:
                 self.etapa_crecimiento = 2  # Crecimiento
-                self.estado_cultivo_label.config(text="Estado: Crecimiento")
-            else:
-                self.estado_cultivo_label.config(text="Estado: Germinación")
         
         self.actualizar_simulacion()
     
@@ -576,16 +640,41 @@ class SimuladorPlatano:
         self.etapa_crecimiento = 0
         self.dias_desde_siembra = 0
         self.btn_sembrar.config(text="🌱 SEMBRAR PLÁTANO", state=tk.NORMAL, bg='#4caf50')
+        
+        # RESTABLECER EL ESTADO A "No sembrado" AL REINICIAR
         self.estado_cultivo_label.config(text="Estado: No sembrado")
+        self.actualizar_info_cultivo()
+        
         self.inicializar_datos()
         self.actualizar_simulacion()
         messagebox.showinfo("Reinicio", "Simulación reiniciada correctamente")
+    
+    def actualizar_info_cultivo(self):
+        """Actualiza la información del cultivo en la interfaz"""
+        if self.platano_sembrado:
+            etapas = {1: "Germinación", 2: "Crecimiento", 3: "Maduración"}
+            etapa_text = etapas.get(self.etapa_crecimiento, "Desconocida")
+            
+            self.etapa_label.config(text=f"Etapa: {etapa_text}")
+            self.dias_label.config(text=f"Días desde siembra: {self.dias_desde_siembra}")
+            
+            if self.etapa_crecimiento < 3:
+                dias_restantes = 30 - (self.dias_desde_siembra % 30)
+                self.proxima_label.config(text=f"Próxima etapa en: {dias_restantes} días")
+            else:
+                self.proxima_label.config(text="¡Etapa final alcanzada!")
+        else:
+            self.etapa_label.config(text="Estado: No sembrado")
+            self.dias_label.config(text="")
+            self.proxima_label.config(text="")
     
     def actualizar_simulacion(self):
         """Actualiza toda la simulación con los datos del mes actual"""
         self.simular_clima()
         self.actualizar_controles()
         self.actualizar_graficos()
+        self.actualizar_estadisticas()
+        self.actualizar_info_cultivo()
         self.dibujar_parcela()
         self.verificar_alertas()
     
@@ -630,6 +719,125 @@ class SimuladorPlatano:
         self.actualizar_grafico_pastel()
         self.actualizar_grafico_prediccion()
     
+    def actualizar_estadisticas(self):
+        """Actualiza las estadísticas detalladas"""
+        self.stats_canvas.delete("all")
+        
+        if not self.historial_humedad:
+            self.stats_canvas.create_text(325, 400, 
+                                        text='No hay datos suficientes\npara mostrar estadísticas', 
+                                        font=('Arial', 14, 'bold'), fill='white',
+                                        justify=tk.CENTER)
+            return
+        
+        # Calcular estadísticas
+        humedad_actual = self.historial_humedad[-1] if self.historial_humedad else 0
+        humedad_min = min(self.historial_humedad) if self.historial_humedad else 0
+        humedad_max = max(self.historial_humedad) if self.historial_humedad else 0
+        humedad_promedio = sum(self.historial_humedad) / len(self.historial_humedad) if self.historial_humedad else 0
+        
+        # Contar sensores por estado
+        estados = {'IDEAL': 0, 'BAJA': 0, 'ALTA': 0}
+        for sensor in self.datos_sensores.values():
+            if sensor['humedad'] < self.humedad_ideal_min:
+                estados['BAJA'] += 1
+            elif sensor['humedad'] > self.humedad_ideal_max:
+                estados['ALTA'] += 1
+            else:
+                estados['IDEAL'] += 1
+        
+        # Texto de estadísticas
+        stats_text = f"""ESTADÍSTICAS DETALLADAS - MES {self.meses[self.mes_actual]}
+
+HUMEDAD:
+• Actual: {humedad_actual:.1f}%
+• Mínima Histórica: {humedad_min:.1f}%
+• Máxima Histórica: {humedad_max:.1f}%
+• Promedio: {humedad_promedio:.1f}%
+
+SENSORES ({self.total_sensores} total):
+• Ideales: {estados['IDEAL']} ({estados['IDEAL']/self.total_sensores*100:.1f}%)
+• Baja Humedad: {estados['BAJA']} ({estados['BAJA']/self.total_sensores*100:.1f}%)
+• Alta Humedad: {estados['ALTA']} ({estados['ALTA']/self.total_sensores*100:.1f}%)
+
+RECURSOS:
+• Nivel de agua: {self.nivel_agua}%
+• Meses simulados: {len(self.historial_humedad)}
+• Áreas totales: {self.num_areas}
+
+CULTIVO:
+• Estado: {'Plátanos sembrados' if self.platano_sembrado else 'No sembrado'}"""
+        
+        if self.platano_sembrado:
+            etapas = {1: "Germinación", 2: "Crecimiento", 3: "Maduración"}
+            etapa_text = etapas.get(self.etapa_crecimiento, "Desconocida")
+            stats_text += f"""
+• Etapa actual: {etapa_text}
+• Días desde siembra: {self.dias_desde_siembra}
+• Próxima etapa: {30 - (self.dias_desde_siembra % 30) if self.etapa_crecimiento < 3 else '¡Final!'} días
+
+RANGO IDEAL PARA PLÁTANO: {self.humedad_ideal_min}% - {self.humedad_ideal_max}%"""
+        
+        # Dibujar texto
+        lines = stats_text.split('\n')
+        for i, line in enumerate(lines):
+            y_pos = 50 + i * 25
+            self.stats_canvas.create_text(50, y_pos, text=line, 
+                                         font=('Arial', 11, 'bold'), 
+                                         fill='white', anchor=tk.W)
+        
+        # Título
+        self.stats_canvas.create_text(325, 20, 
+                                     text="📈 ESTADÍSTICAS DETALLADAS", 
+                                     font=('Arial', 16, 'bold'), fill='white')
+        
+        # Dibujar gráfico de progreso si hay cultivo
+        if self.platano_sembrado:
+            self.dibujar_progreso_cultivo()
+    
+    def dibujar_progreso_cultivo(self):
+        """Dibuja una barra de progreso del cultivo"""
+        y_base = 600
+        ancho_total = 600
+        alto_barra = 30
+        
+        # Fondo de la barra
+        self.stats_canvas.create_rectangle(50, y_base, 50 + ancho_total, y_base + alto_barra,
+                                          fill='#333333', outline='white', width=2)
+        
+        # Progreso actual
+        progreso = min(1.0, self.dias_desde_siembra / 90.0)
+        ancho_progreso = ancho_total * progreso
+        
+        # Color según etapa
+        if self.etapa_crecimiento == 1:
+            color = '#8bc34a'
+        elif self.etapa_crecimiento == 2:
+            color = '#4caf50'
+        else:
+            color = '#388e3c'
+        
+        # Barra de progreso
+        self.stats_canvas.create_rectangle(50, y_base, 50 + ancho_progreso, y_base + alto_barra,
+                                          fill=color, outline='')
+        
+        # Etiquetas
+        self.stats_canvas.create_text(325, y_base - 20, 
+                                     text="PROGRESO DEL CULTIVO", 
+                                     font=('Arial', 12, 'bold'), fill='white')
+        
+        self.stats_canvas.create_text(325, y_base + alto_barra + 20, 
+                                     text=f"{self.dias_desde_siembra}/90 días ({progreso*100:.1f}%)", 
+                                     font=('Arial', 10, 'bold'), fill='white')
+        
+        # Marcas de etapas
+        for i, (dias, etapa) in enumerate([(0, "Inicio"), (30, "Germ"), (60, "Crec"), (90, "Mad")]):
+            x = 50 + (dias / 90.0) * ancho_total
+            self.stats_canvas.create_line(x, y_base - 10, x, y_base + alto_barra + 10, 
+                                        fill='white', width=1)
+            self.stats_canvas.create_text(x, y_base - 25, text=etapa, 
+                                         font=('Arial', 8), fill='white')
+    
     def actualizar_grafico_barras(self):
         """Actualiza el gráfico de barras de humedad por áreas"""
         self.bar_canvas.delete("all")
@@ -644,7 +852,7 @@ class SimuladorPlatano:
             humedades_areas.append(humedad_promedio)
         
         # Configuración del gráfico
-        canvas_width = 700
+        canvas_width = 650
         canvas_height = 500
         margin = 80
         graph_width = canvas_width - 2 * margin
@@ -730,7 +938,7 @@ class SimuladorPlatano:
             return
         
         # Configuración
-        canvas_width = 700
+        canvas_width = 650
         canvas_height = 500
         center_x = canvas_width // 2
         center_y = canvas_height // 2
@@ -797,14 +1005,14 @@ class SimuladorPlatano:
         self.pred_canvas.delete("all")
         
         if len(self.historial_humedad) < 2:
-            self.pred_canvas.create_text(350, 250, 
+            self.pred_canvas.create_text(325, 250, 
                                        text="Se necesitan más datos\npara la predicción", 
                                        font=('Arial', 14, 'bold'), fill='white',
                                        justify=tk.CENTER)
             return
         
         # Configuración
-        canvas_width = 700
+        canvas_width = 650
         canvas_height = 500
         margin = 80
         graph_width = canvas_width - 2 * margin
