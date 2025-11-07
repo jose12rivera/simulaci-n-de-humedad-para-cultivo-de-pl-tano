@@ -19,6 +19,11 @@ class SimuladorPlatano:
         self.sensores_por_area = 2
         self.total_sensores = self.num_areas * self.sensores_por_area
         
+        # Estado del cultivo
+        self.platano_sembrado = False
+        self.etapa_crecimiento = 0  # 0: No sembrado, 1: Germinación, 2: Crecimiento, 3: Maduración
+        self.dias_desde_siembra = 0
+        
         # Datos de simulación
         self.meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 
                      'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
@@ -56,7 +61,8 @@ class SimuladorPlatano:
             self.datos_sensores[i] = {
                 'humedad': random.randint(60, 75),
                 'area': i // self.sensores_por_area,
-                'estado': 'Normal'
+                'estado': 'Normal',
+                'lado': 'izquierdo' if (i // self.sensores_por_area) < 6 else 'derecho'
             }
     
     def crear_interfaz(self):
@@ -76,27 +82,300 @@ class SimuladorPlatano:
         content_frame = tk.Frame(main_frame, bg='#2d5016')
         content_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Panel izquierdo - Controles y sensores
+        # Panel izquierdo - Vista de la parcela
         left_panel = tk.Frame(content_frame, bg='#3a6519', relief=tk.RAISED, bd=3)
         left_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0,5))
         
-        # Panel derecho - Gráficos
+        # Panel derecho - Gráficos y controles
         right_panel = tk.Frame(content_frame, bg='#3a6519', relief=tk.RAISED, bd=3)
         right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(5,0))
         
-        self.crear_controles(left_panel)
-        self.crear_graficos(right_panel)
+        self.crear_vista_parcela(left_panel)
+        self.crear_controles_derecha(right_panel)
     
-    def crear_controles(self, parent):
-        # Frame de controles superiores
-        controles_frame = tk.Frame(parent, bg='#3a6519')
-        controles_frame.pack(fill=tk.X, padx=10, pady=10)
+    def crear_vista_parcela(self, parent):
+        """Crea la vista visual de la parcela con sensores"""
+        # Frame principal de la parcela
+        parcela_frame = tk.Frame(parent, bg='#3a6519')
+        parcela_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Título
+        tk.Label(parcela_frame, text="🏞️ VISTA DE LA PARCELA", 
+                font=('Arial', 16, 'bold'), bg='#3a6519', fg='white').pack(pady=10)
+        
+        # Canvas para dibujar la parcela
+        self.parcela_canvas = tk.Canvas(parcela_frame, bg='#5a8c2f', highlightthickness=0,
+                                       width=600, height=500)
+        self.parcela_canvas.pack(fill=tk.BOTH, expand=True, pady=10)
+        
+        # Frame para controles de riego y siembra
+        controles_frame = tk.Frame(parcela_frame, bg='#3a6519')
+        controles_frame.pack(fill=tk.X, pady=10)
+        
+        # Pileta de agua
+        pileta_frame = tk.LabelFrame(controles_frame, text="💧 PILETA DE AGUA", 
+                                   font=('Arial', 12, 'bold'), bg='#4a7c1f', fg='white',
+                                   padx=10, pady=10)
+        pileta_frame.pack(fill=tk.X, pady=5)
+        
+        # Botones de control de riego
+        botones_frame = tk.Frame(pileta_frame, bg='#4a7c1f')
+        botones_frame.pack(fill=tk.X, pady=5)
+        
+        tk.Button(botones_frame, text="🚿 REGAR LADO IZQUIERDO", 
+                 command=lambda: self.regar_lado('izquierdo'),
+                 bg='#2196f3', fg='white', font=('Arial', 11, 'bold'),
+                 relief=tk.RAISED, bd=3, cursor='hand2', width=20).pack(side=tk.LEFT, padx=10)
+        
+        tk.Button(botones_frame, text="🚿 REGAR LADO DERECHO", 
+                 command=lambda: self.regar_lado('derecho'),
+                 bg='#2196f3', fg='white', font=('Arial', 11, 'bold'),
+                 relief=tk.RAISED, bd=3, cursor='hand2', width=20).pack(side=tk.RIGHT, padx=10)
+        
+        # Botón para sembrar plátano
+        siembra_frame = tk.Frame(pileta_frame, bg='#4a7c1f')
+        siembra_frame.pack(fill=tk.X, pady=5)
+        
+        self.btn_sembrar = tk.Button(siembra_frame, text="🌱 SEMBRAR PLÁTANO", 
+                                    command=self.sembrar_platano,
+                                    bg='#4caf50', fg='white', font=('Arial', 12, 'bold'),
+                                    relief=tk.RAISED, bd=3, cursor='hand2', width=25)
+        self.btn_sembrar.pack(pady=5)
+        
+        # Indicador de nivel de agua y estado del cultivo
+        info_frame = tk.Frame(pileta_frame, bg='#4a7c1f')
+        info_frame.pack(fill=tk.X, pady=5)
+        
+        self.nivel_agua = 80  # Nivel inicial de agua (%)
+        self.nivel_label = tk.Label(info_frame, text=f"Nivel de agua: {self.nivel_agua}%", 
+                                   font=('Arial', 11, 'bold'), bg='#4a7c1f', fg='#00ffff')
+        self.nivel_label.pack(side=tk.LEFT, padx=20)
+        
+        self.estado_cultivo_label = tk.Label(info_frame, text="Estado: No sembrado", 
+                                            font=('Arial', 11, 'bold'), bg='#4a7c1f', fg='#ffeb3b')
+        self.estado_cultivo_label.pack(side=tk.RIGHT, padx=20)
+        
+        # Dibujar la parcela inicial
+        self.dibujar_parcela()
+    
+    def dibujar_parcela(self):
+        """Dibuja la representación visual de la parcela"""
+        self.parcela_canvas.delete("all")
+        
+        canvas_width = self.parcela_canvas.winfo_width()
+        canvas_height = self.parcela_canvas.winfo_height()
+        
+        if canvas_width <= 1:  # Si el canvas no está renderizado aún
+            canvas_width = 600
+            canvas_height = 500
+        
+        # Dibujar el canal central
+        canal_x = canvas_width // 2
+        canal_ancho = 30
+        self.parcela_canvas.create_rectangle(canal_x - canal_ancho//2, 50,
+                                           canal_x + canal_ancho//2, canvas_height - 50,
+                                           fill='#1e88e5', outline='#0d47a1', width=2)
+        
+        # Dibujar texto "CANAL"
+        self.parcela_canvas.create_text(canal_x, canvas_height // 2, 
+                                       text="CANAL", font=('Arial', 12, 'bold'),
+                                       fill='white', angle=90)
+        
+        # Dibujar sensores del lado izquierdo
+        lado_izq_x = canal_x - canal_ancho//2 - 60
+        self.dibujar_sensores_lado(lado_izq_x, 'izquierdo')
+        
+        # Dibujar sensores del lado derecho
+        lado_der_x = canal_x + canal_ancho//2 + 60
+        self.dibujar_sensores_lado(lado_der_x, 'derecho')
+        
+        # Dibujar pileta de agua
+        self.dibujar_pileta_agua()
+        
+        # Dibujar plátanos si están sembrados
+        if self.platano_sembrado:
+            self.dibujar_platanos()
+    
+    def dibujar_sensores_lado(self, x_base, lado):
+        """Dibuja los sensores de un lado específico"""
+        canvas_height = self.parcela_canvas.winfo_height()
+        if canvas_height <= 1:
+            canvas_height = 500
+        
+        # Calcular qué sensores pertenecen a este lado
+        sensores_lado = []
+        for sensor_id, data in self.datos_sensores.items():
+            if data['lado'] == lado:
+                sensores_lado.append((sensor_id, data))
+        
+        # Ordenar sensores por área
+        sensores_lado.sort(key=lambda x: x[1]['area'])
+        
+        # Dibujar 6 sensores en este lado (2 por área × 3 áreas en vertical)
+        espaciado_y = (canvas_height - 100) // 6
+        radio_sensor = 15
+        
+        for i, (sensor_id, data) in enumerate(sensores_lado[:6]):  # Solo primeros 6 del lado
+            y = 80 + i * espaciado_y
+            
+            # Color según estado de humedad
+            if data['humedad'] < self.humedad_ideal_min:
+                color = '#ff9800'  # Naranja - baja humedad
+            elif data['humedad'] > self.humedad_ideal_max:
+                color = '#f44336'  # Rojo - alta humedad
+            else:
+                color = '#4caf50'  # Verde - ideal
+            
+            # Dibujar sensor
+            self.parcela_canvas.create_oval(x_base - radio_sensor, y - radio_sensor,
+                                           x_base + radio_sensor, y + radio_sensor,
+                                           fill=color, outline='white', width=2)
+            
+            # Etiqueta del sensor
+            self.parcela_canvas.create_text(x_base, y, 
+                                           text=str(sensor_id + 1),
+                                           font=('Arial', 8, 'bold'), fill='white')
+            
+            # Indicador de humedad
+            humedad_text = f"{data['humedad']}%"
+            self.parcela_canvas.create_text(x_base, y + radio_sensor + 10,
+                                           text=humedad_text,
+                                           font=('Arial', 7), fill='white')
+            
+            # Línea conectando al canal (simulando tubería de riego)
+            canal_x = self.parcela_canvas.winfo_width() // 2
+            if lado == 'izquierdo':
+                self.parcela_canvas.create_line(x_base + radio_sensor, y,
+                                               canal_x - 15, y,
+                                               fill='#888888', width=1, dash=(2, 2))
+            else:
+                self.parcela_canvas.create_line(x_base - radio_sensor, y,
+                                               canal_x + 15, y,
+                                               fill='#888888', width=1, dash=(2, 2))
+    
+    def dibujar_pileta_agua(self):
+        """Dibuja la pileta de agua"""
+        canvas_width = self.parcela_canvas.winfo_width()
+        canvas_height = self.parcela_canvas.winfo_height()
+        
+        if canvas_width <= 1:
+            canvas_width = 600
+            canvas_height = 500
+        
+        # Posición de la pileta (abajo a la derecha)
+        pileta_x = canvas_width - 100
+        pileta_y = canvas_height - 80
+        pileta_ancho = 80
+        pileta_alto = 60
+        
+        # Dibujar pileta
+        self.parcela_canvas.create_rectangle(pileta_x, pileta_y,
+                                           pileta_x + pileta_ancho, pileta_y + pileta_alto,
+                                           fill='#1e88e5', outline='#0d47a1', width=3)
+        
+        # Dibujar nivel de agua
+        nivel_alto = (self.nivel_agua / 100) * pileta_alto
+        self.parcela_canvas.create_rectangle(pileta_x, pileta_y + pileta_alto - nivel_alto,
+                                           pileta_x + pileta_ancho, pileta_y + pileta_alto,
+                                           fill='#29b6f6', outline='')
+        
+        # Etiqueta de la pileta
+        self.parcela_canvas.create_text(pileta_x + pileta_ancho//2, pileta_y - 10,
+                                       text="PILETA", font=('Arial', 9, 'bold'),
+                                       fill='white')
+        
+        # Tuberías de conexión a los lados
+        canal_x = canvas_width // 2
+        self.parcela_canvas.create_line(pileta_x, pileta_y + pileta_alto//2,
+                                       canal_x, pileta_y + pileta_alto//2,
+                                       fill='#888888', width=2)
+    
+    def dibujar_platanos(self):
+        """Dibuja los plátanos en la parcela"""
+        canvas_width = self.parcela_canvas.winfo_width()
+        canvas_height = self.parcela_canvas.winfo_height()
+        
+        if canvas_width <= 1:
+            canvas_width = 600
+            canvas_height = 500
+        
+        canal_x = canvas_width // 2
+        
+        # Dibujar plátanos en ambos lados
+        for lado, offset in [('izquierdo', -80), ('derecho', 80)]:
+            x_base = canal_x + offset
+            
+            # Dibujar 3 plantas de plátano por lado
+            for i in range(3):
+                y = 120 + i * 120
+                
+                # Tamaño según etapa de crecimiento
+                if self.etapa_crecimiento == 1:  # Germinación
+                    tamaño = 15
+                    color = '#8bc34a'
+                    emoji = "🌱"
+                elif self.etapa_crecimiento == 2:  # Crecimiento
+                    tamaño = 25
+                    color = '#4caf50'
+                    emoji = "🌿"
+                else:  # Maduración
+                    tamaño = 35
+                    color = '#388e3c'
+                    emoji = "🍌"
+                
+                # Dibujar planta
+                self.parcela_canvas.create_oval(x_base - tamaño, y - tamaño,
+                                               x_base + tamaño, y + tamaño,
+                                               fill=color, outline='#2e7d32', width=2)
+                
+                # Dibujar emoji de plátano
+                self.parcela_canvas.create_text(x_base, y, text=emoji,
+                                               font=('Arial', 12), fill='#795548')
+    
+    def crear_controles_derecha(self, parent):
+        """Crea los controles del panel derecho"""
+        # Notebook para organizar contenido
+        notebook = ttk.Notebook(parent)
+        notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Estilo para el notebook
+        style = ttk.Style()
+        style.configure('TNotebook.Tab', font=('Arial', 10, 'bold'))
+        
+        # Pestaña 1: Información y controles
+        info_tab = tk.Frame(notebook, bg='#2d5016')
+        notebook.add(info_tab, text='📋 Información')
+        
+        # Pestaña 2: Gráficos
+        graficos_tab = tk.Frame(notebook, bg='#2d5016')
+        notebook.add(graficos_tab, text='📊 Gráficos')
+        
+        self.crear_pestana_informacion(info_tab)
+        self.crear_pestana_graficos(graficos_tab)
+    
+    def crear_pestana_informacion(self, parent):
+        """Crea la pestaña de información"""
+        # Frame con scroll
+        canvas = tk.Canvas(parent, bg='#2d5016', highlightthickness=0)
+        scrollbar = tk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        scrollable_frame = tk.Frame(canvas, bg='#2d5016')
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
         
         # Información del mes actual
-        info_frame = tk.LabelFrame(controles_frame, text="📅 INFORMACIÓN DEL MES ACTUAL", 
+        info_frame = tk.LabelFrame(scrollable_frame, text="📅 INFORMACIÓN DEL MES ACTUAL", 
                                   font=('Arial', 12, 'bold'), bg='#4a7c1f', fg='white',
-                                  padx=10, pady=10)
-        info_frame.pack(fill=tk.X, pady=5)
+                                  padx=15, pady=15)
+        info_frame.pack(fill=tk.X, padx=10, pady=10)
         
         self.mes_label = tk.Label(info_frame, text="Mes: Enero", font=('Arial', 14, 'bold'),
                                  bg='#4a7c1f', fg='yellow')
@@ -106,121 +385,183 @@ class SimuladorPlatano:
                                    font=('Arial', 11), bg='#4a7c1f', fg='white')
         self.clima_label.pack(anchor=tk.W)
         
-        # Controles de simulación
-        control_buttons = tk.Frame(controles_frame, bg='#3a6519')
-        control_buttons.pack(fill=tk.X, pady=10)
-        
-        tk.Button(control_buttons, text="⏭️ AVANZAR MES", command=self.avanzar_mes,
-                 bg='#ff6b35', fg='white', font=('Arial', 12, 'bold'),
-                 relief=tk.RAISED, bd=3, cursor='hand2').pack(side=tk.LEFT, padx=5)
-        
-        tk.Button(control_buttons, text="🔄 REINICIAR SIMULACIÓN", command=self.reiniciar_simulacion,
-                 bg='#2196f3', fg='white', font=('Arial', 12, 'bold'),
-                 relief=tk.RAISED, bd=3, cursor='hand2').pack(side=tk.LEFT, padx=5)
-        
-        # Frame para sensores con scroll
-        sensores_container = tk.Frame(parent, bg='#3a6519')
-        sensores_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-        
-        # Canvas y scrollbar para sensores
-        canvas = tk.Canvas(sensores_container, bg='#3a6519', highlightthickness=0)
-        scrollbar = tk.Scrollbar(sensores_container, orient="vertical", command=canvas.yview)
-        self.scrollable_frame = tk.Frame(canvas, bg='#3a6519')
-        
-        self.scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-        
-        canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-        
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-        
-        self.crear_vista_sensores()
-    
-    def crear_vista_sensores(self):
-        """Crea la visualización de los sensores por áreas"""
-        # Limpiar frame existente
-        for widget in self.scrollable_frame.winfo_children():
-            widget.destroy()
-        
-        # Crear visualización de áreas
-        for area in range(self.num_areas):
-            area_frame = tk.LabelFrame(self.scrollable_frame, 
-                                     text=f"📍 ÁREA {area + 1}", 
-                                     font=('Arial', 10, 'bold'),
-                                     bg='#5a8c2f', fg='white', padx=10, pady=5)
-            area_frame.pack(fill=tk.X, padx=5, pady=3)
+        # Información del cultivo
+        if self.platano_sembrado:
+            cultivo_frame = tk.LabelFrame(scrollable_frame, text="🌱 ESTADO DEL CULTIVO", 
+                                        font=('Arial', 12, 'bold'), bg='#4a7c1f', fg='white',
+                                        padx=15, pady=15)
+            cultivo_frame.pack(fill=tk.X, padx=10, pady=10)
             
-            # Sensores del área
+            etapas = {1: "Germinación", 2: "Crecimiento", 3: "Maduración"}
+            etapa_text = etapas.get(self.etapa_crecimiento, "Desconocida")
+            
+            tk.Label(cultivo_frame, text=f"Etapa: {etapa_text}", 
+                    font=('Arial', 11, 'bold'), bg='#4a7c1f', fg='#ffeb3b').pack(anchor=tk.W)
+            tk.Label(cultivo_frame, text=f"Días desde siembra: {self.dias_desde_siembra}", 
+                    font=('Arial', 11), bg='#4a7c1f', fg='white').pack(anchor=tk.W)
+            tk.Label(cultivo_frame, text=f"Próxima etapa en: {max(0, 30 - self.dias_desde_siembra)} días", 
+                    font=('Arial', 11), bg='#4a7c1f', fg='white').pack(anchor=tk.W)
+        
+        # Controles de simulación
+        control_frame = tk.LabelFrame(scrollable_frame, text="🎮 CONTROLES DE SIMULACIÓN", 
+                                     font=('Arial', 12, 'bold'), bg='#4a7c1f', fg='white',
+                                     padx=15, pady=15)
+        control_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        tk.Button(control_frame, text="⏭️ AVANZAR MES", command=self.avanzar_mes,
+                 bg='#ff6b35', fg='white', font=('Arial', 12, 'bold'),
+                 relief=tk.RAISED, bd=3, cursor='hand2', width=20).pack(pady=5)
+        
+        tk.Button(control_frame, text="🔄 REINICIAR SIMULACIÓN", command=self.reiniciar_simulacion,
+                 bg='#2196f3', fg='white', font=('Arial', 12, 'bold'),
+                 relief=tk.RAISED, bd=3, cursor='hand2', width=20).pack(pady=5)
+        
+        # Estado de sensores
+        sensores_frame = tk.LabelFrame(scrollable_frame, text="🔍 ESTADO DE SENSORES", 
+                                      font=('Arial', 12, 'bold'), bg='#4a7c1f', fg='white',
+                                      padx=15, pady=15)
+        sensores_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        # Crear grid de sensores
+        for area in range(self.num_areas):
+            area_frame = tk.Frame(sensores_frame, bg='#4a7c1f')
+            area_frame.pack(fill=tk.X, pady=2)
+            
+            tk.Label(area_frame, text=f"Área {area+1}:", font=('Arial', 9, 'bold'),
+                    bg='#4a7c1f', fg='white', width=8).pack(side=tk.LEFT)
+            
             for sensor_idx in range(self.sensores_por_area):
                 sensor_id = area * self.sensores_por_area + sensor_idx
                 sensor_data = self.datos_sensores[sensor_id]
                 
-                sensor_frame = tk.Frame(area_frame, bg='#5a8c2f')
-                sensor_frame.pack(fill=tk.X, pady=2)
-                
-                # Icono según estado
-                estado_color = '#4caf50'  # Normal - verde
+                # Color según estado
                 if sensor_data['humedad'] < self.humedad_ideal_min:
-                    estado_color = '#ff9800'  # Baja - naranja
+                    color = '#ff9800'
+                    estado = "BAJA"
                 elif sensor_data['humedad'] > self.humedad_ideal_max:
-                    estado_color = '#f44336'  # Alta - rojo
+                    color = '#f44336'
+                    estado = "ALTA"
+                else:
+                    color = '#4caf50'
+                    estado = "IDEAL"
                 
-                tk.Label(sensor_frame, text="🔍", font=('Arial', 12),
-                        bg='#5a8c2f', fg=estado_color).pack(side=tk.LEFT)
-                
-                info_text = f"Sensor {sensor_id + 1}: {sensor_data['humedad']}%"
-                tk.Label(sensor_frame, text=info_text, font=('Arial', 9),
-                        bg='#5a8c2f', fg='white').pack(side=tk.LEFT, padx=5)
-                
-                estado_text = f"({sensor_data['estado']})"
-                tk.Label(sensor_frame, text=estado_text, font=('Arial', 9, 'bold'),
-                        bg='#5a8c2f', fg=estado_color).pack(side=tk.LEFT, padx=5)
+                sensor_text = f"S{sensor_id+1}: {sensor_data['humedad']}%"
+                lbl = tk.Label(area_frame, text=sensor_text, font=('Arial', 8),
+                             bg=color, fg='white', width=12)
+                lbl.pack(side=tk.LEFT, padx=2)
+        
+        # Leyenda
+        leyenda_frame = tk.Frame(sensores_frame, bg='#4a7c1f')
+        leyenda_frame.pack(fill=tk.X, pady=10)
+        
+        tk.Label(leyenda_frame, text="Leyenda:", font=('Arial', 9, 'bold'),
+                bg='#4a7c1f', fg='white').pack(side=tk.LEFT)
+        
+        for color, texto in [('#4caf50', 'Ideal'), ('#ff9800', 'Baja'), ('#f44336', 'Alta')]:
+            tk.Label(leyenda_frame, text="■", font=('Arial', 12),
+                    bg=color, fg=color).pack(side=tk.LEFT, padx=2)
+            tk.Label(leyenda_frame, text=texto, font=('Arial', 8),
+                    bg='#4a7c1f', fg='white').pack(side=tk.LEFT, padx=5)
     
-    def crear_graficos(self, parent):
-        # Notebook para diferentes gráficos
-        notebook = ttk.Notebook(parent)
-        notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+    def crear_pestana_graficos(self, parent):
+        """Crea la pestaña de gráficos"""
+        # Notebook para gráficos
+        graficos_notebook = ttk.Notebook(parent)
+        graficos_notebook.pack(fill=tk.BOTH, expand=True)
         
-        # Estilo para el notebook
-        style = ttk.Style()
-        style.configure('TNotebook.Tab', font=('Arial', 10, 'bold'))
+        # Pestaña de gráfico de barras
+        bar_frame = tk.Frame(graficos_notebook, bg='#2d5016')
+        graficos_notebook.add(bar_frame, text='📊 Barras')
         
-        # Pestaña 1: Gráfico de barras - Humedad por áreas
-        self.bar_frame = tk.Frame(notebook, bg='#2d5016')
-        notebook.add(self.bar_frame, text='📊 Humedad por Áreas')
+        # Pestaña de gráfico de pastel
+        pie_frame = tk.Frame(graficos_notebook, bg='#2d5016')
+        graficos_notebook.add(pie_frame, text='🥧 Pastel')
         
-        # Pestaña 2: Gráfico de pastel - Distribución de estados
-        self.pie_frame = tk.Frame(notebook, bg='#2d5016')
-        notebook.add(self.pie_frame, text='🥧 Estados de Sensores')
-        
-        # Pestaña 3: Predicción
-        self.pred_frame = tk.Frame(notebook, bg='#2d5016')
-        notebook.add(self.pred_frame, text='🔮 Predicción')
-        
-        # Pestaña 4: Estadísticas detalladas
-        self.stats_frame = tk.Frame(notebook, bg='#2d5016')
-        notebook.add(self.stats_frame, text='📈 Estadísticas')
+        # Pestaña de predicción
+        pred_frame = tk.Frame(graficos_notebook, bg='#2d5016')
+        graficos_notebook.add(pred_frame, text='🔮 Predicción')
         
         # Canvas para gráficos
-        self.bar_canvas = tk.Canvas(self.bar_frame, bg='#2d5016', highlightthickness=0)
-        self.bar_canvas.pack(fill=tk.BOTH, expand=True)
+        self.bar_canvas = tk.Canvas(bar_frame, bg='#2d5016', highlightthickness=0)
+        self.bar_canvas.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        self.pie_canvas = tk.Canvas(self.pie_frame, bg='#2d5016', highlightthickness=0)
-        self.pie_canvas.pack(fill=tk.BOTH, expand=True)
+        self.pie_canvas = tk.Canvas(pie_frame, bg='#2d5016', highlightthickness=0)
+        self.pie_canvas.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        self.pred_canvas = tk.Canvas(self.pred_frame, bg='#2d5016', highlightthickness=0)
-        self.pred_canvas.pack(fill=tk.BOTH, expand=True)
+        self.pred_canvas = tk.Canvas(pred_frame, bg='#2d5016', highlightthickness=0)
+        self.pred_canvas.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+    
+    def sembrar_platano(self):
+        """Acción de sembrar plátano"""
+        if self.platano_sembrado:
+            messagebox.showinfo("Cultivo Existente", "¡Ya hay plátanos sembrados en la parcela!")
+            return
         
-        self.stats_canvas = tk.Canvas(self.stats_frame, bg='#2d5016', highlightthickness=0)
-        self.stats_canvas.pack(fill=tk.BOTH, expand=True)
+        self.platano_sembrado = True
+        self.etapa_crecimiento = 1  # Comienza en germinación
+        self.dias_desde_siembra = 0
+        self.btn_sembrar.config(text="🌱 PLÁTANO SEMBRADO", state=tk.DISABLED, bg='#795548')
+        self.estado_cultivo_label.config(text="Estado: Germinación")
+        
+        self.dibujar_parcela()
+        messagebox.showinfo("Siembra Exitosa", 
+                          "✅ ¡Plátanos sembrados correctamente!\n\n"
+                          "🌱 Etapa: Germinación\n"
+                          "⏰ Próxima etapa en: 30 días\n"
+                          "💧 Mantén la humedad entre 65%-80%")
+    
+    def regar_lado(self, lado):
+        """Riega un lado específico de la parcela"""
+        if self.nivel_agua < 10:
+            messagebox.showwarning("Agua Insuficiente", 
+                                 "¡La pileta está casi vacía! Recargue agua primero.")
+            return
+        
+        # Reducir nivel de agua
+        self.nivel_agua = max(0, self.nivel_agua - 15)
+        self.nivel_label.config(text=f"Nivel de agua: {self.nivel_agua}%")
+        
+        # Aumentar humedad en los sensores del lado seleccionado
+        sensores_regados = 0
+        for sensor_id, data in self.datos_sensores.items():
+            if data['lado'] == lado:
+                # Aumentar humedad entre 15-25%
+                aumento = random.uniform(15, 25)
+                nueva_humedad = min(95, data['humedad'] + aumento)
+                self.datos_sensores[sensor_id]['humedad'] = round(nueva_humedad, 1)
+                sensores_regados += 1
+        
+        # Actualizar visualización
+        self.dibujar_parcela()
+        self.actualizar_graficos()
+        
+        messagebox.showinfo("Riego Completado", 
+                          f"✅ Lado {lado.upper()} regado correctamente\n"
+                          f"📊 {sensores_regados} sensores actualizados\n"
+                          f"💧 Nivel de agua restante: {self.nivel_agua}%")
     
     def avanzar_mes(self):
         """Avanza al siguiente mes en la simulación"""
         self.mes_actual = (self.mes_actual + 1) % 12
+        
+        # Recargar un poco de agua cada mes (lluvia natural)
+        self.nivel_agua = min(100, self.nivel_agua + 10)
+        self.nivel_label.config(text=f"Nivel de agua: {self.nivel_agua}%")
+        
+        # Avanzar crecimiento del plátano
+        if self.platano_sembrado:
+            self.dias_desde_siembra += 30  # 30 días por mes
+            
+            # Actualizar etapa de crecimiento
+            if self.dias_desde_siembra >= 90:
+                self.etapa_crecimiento = 3  # Maduración
+                self.estado_cultivo_label.config(text="Estado: Maduración - ¡Listo para cosechar!")
+            elif self.dias_desde_siembra >= 60:
+                self.etapa_crecimiento = 2  # Crecimiento
+                self.estado_cultivo_label.config(text="Estado: Crecimiento")
+            else:
+                self.estado_cultivo_label.config(text="Estado: Germinación")
+        
         self.actualizar_simulacion()
     
     def reiniciar_simulacion(self):
@@ -229,6 +570,13 @@ class SimuladorPlatano:
         self.historial_humedad = []
         self.historial_riego = []
         self.alertas = []
+        self.nivel_agua = 80
+        self.nivel_label.config(text=f"Nivel de agua: {self.nivel_agua}%")
+        self.platano_sembrado = False
+        self.etapa_crecimiento = 0
+        self.dias_desde_siembra = 0
+        self.btn_sembrar.config(text="🌱 SEMBRAR PLÁTANO", state=tk.NORMAL, bg='#4caf50')
+        self.estado_cultivo_label.config(text="Estado: No sembrado")
         self.inicializar_datos()
         self.actualizar_simulacion()
         messagebox.showinfo("Reinicio", "Simulación reiniciada correctamente")
@@ -238,7 +586,7 @@ class SimuladorPlatano:
         self.simular_clima()
         self.actualizar_controles()
         self.actualizar_graficos()
-        self.crear_vista_sensores()
+        self.dibujar_parcela()
         self.verificar_alertas()
     
     def simular_clima(self):
@@ -247,59 +595,24 @@ class SimuladorPlatano:
         clima = self.patrones_clima[mes_nombre]
         
         # Calcular efecto neto en humedad
-        efecto_lluvia = clima['lluvia'] * 0.1  # Cada 10mm de lluvia aumenta 1% humedad
-        efecto_sequia = clima['sequia'] * 0.2  # Cada 5% de sequía reduce 1% humedad
-        efecto_temperatura = (clima['temperatura'] - 25) * 0.5  # Temperatura base 25°C
+        efecto_lluvia = clima['lluvia'] * 0.1
+        efecto_sequia = clima['sequia'] * 0.2
+        efecto_temperatura = (clima['temperatura'] - 25) * 0.5
         
         cambio_humedad_neto = efecto_lluvia - efecto_sequia - efecto_temperatura
         
-        # Aplicar cambios a cada sensor con variación aleatoria
+        # Aplicar cambios a cada sensor
         for sensor_id in self.datos_sensores:
             variacion = random.uniform(-5, 5)
             nueva_humedad = self.datos_sensores[sensor_id]['humedad'] + cambio_humedad_neto + variacion
-            
-            # Mantener humedad entre límites razonables
             nueva_humedad = max(30, min(95, nueva_humedad))
             
             self.datos_sensores[sensor_id]['humedad'] = round(nueva_humedad, 1)
-            
-            # Actualizar estado del sensor
-            if nueva_humedad < self.humedad_ideal_min:
-                self.datos_sensores[sensor_id]['estado'] = 'BAJA'
-            elif nueva_humedad > self.humedad_ideal_max:
-                self.datos_sensores[sensor_id]['estado'] = 'ALTA'
-            else:
-                self.datos_sensores[sensor_id]['estado'] = 'IDEAL'
         
         # Registrar datos para historial
         humedades = [sensor['humedad'] for sensor in self.datos_sensores.values()]
         humedad_promedio = sum(humedades) / len(humedades)
         self.historial_humedad.append(humedad_promedio)
-        
-        # Simular riego automático si es necesario
-        areas_con_riego = self.calcular_riego()
-        self.historial_riego.append(areas_con_riego)
-    
-    def calcular_riego(self):
-        """Calcula qué áreas necesitan riego"""
-        areas_con_riego = 0
-        
-        for area in range(self.num_areas):
-            sensores_area = [self.datos_sensores[area * self.sensores_por_area + i] 
-                           for i in range(self.sensores_por_area)]
-            
-            # Promedio de humedad en el área
-            humedades = [sensor['humedad'] for sensor in sensores_area]
-            humedad_promedio = sum(humedades) / len(humedades)
-            
-            # Si el promedio está por debajo del ideal, activar riego
-            if humedad_promedio < self.humedad_ideal_min:
-                areas_con_riego += 1
-                # Aplicar riego a los sensores de esta área
-                for sensor in sensores_area:
-                    sensor['humedad'] = min(85, sensor['humedad'] + random.uniform(10, 20))
-        
-        return areas_con_riego
     
     def actualizar_controles(self):
         """Actualiza los controles de la interfaz"""
@@ -316,7 +629,6 @@ class SimuladorPlatano:
         self.actualizar_grafico_barras()
         self.actualizar_grafico_pastel()
         self.actualizar_grafico_prediccion()
-        self.actualizar_estadisticas()
     
     def actualizar_grafico_barras(self):
         """Actualiza el gráfico de barras de humedad por áreas"""
@@ -406,7 +718,12 @@ class SimuladorPlatano:
         # Contar estados
         estados = {'IDEAL': 0, 'BAJA': 0, 'ALTA': 0}
         for sensor in self.datos_sensores.values():
-            estados[sensor['estado']] += 1
+            if sensor['humedad'] < self.humedad_ideal_min:
+                estados['BAJA'] += 1
+            elif sensor['humedad'] > self.humedad_ideal_max:
+                estados['ALTA'] += 1
+            else:
+                estados['IDEAL'] += 1
         
         total_sensores = self.total_sensores
         if total_sensores == 0:
@@ -562,82 +879,43 @@ class SimuladorPlatano:
         self.pred_canvas.create_text(canvas_width - 100, margin + 40, 
                                    text="● Predicción", fill='#ff6b35', font=('Arial', 9))
     
-    def actualizar_estadisticas(self):
-        """Actualiza las estadísticas detalladas"""
-        self.stats_canvas.delete("all")
-        
-        if not self.historial_humedad:
-            self.stats_canvas.create_text(350, 250, 
-                                        text='No hay datos suficientes\npara mostrar estadísticas', 
-                                        font=('Arial', 14, 'bold'), fill='white',
-                                        justify=tk.CENTER)
-            return
-        
-        # Calcular estadísticas
-        humedad_actual = self.historial_humedad[-1]
-        humedad_min = min(self.historial_humedad)
-        humedad_max = max(self.historial_humedad)
-        humedad_promedio = sum(self.historial_humedad) / len(self.historial_humedad)
-        
-        # Contar sensores por estado
-        estados = {'IDEAL': 0, 'BAJA': 0, 'ALTA': 0}
-        for sensor in self.datos_sensores.values():
-            estados[sensor['estado']] += 1
-        
-        # Texto de estadísticas
-        stats_text = f"""ESTADÍSTICAS DETALLADAS
-
-Humedad Actual: {humedad_actual:.1f}%
-Humedad Mínima Histórica: {humedad_min:.1f}%
-Humedad Máxima Histórica: {humedad_max:.1f}%
-Humedad Promedio: {humedad_promedio:.1f}%
-
-SENSORES:
-• Ideales: {estados['IDEAL']}/{self.total_sensores}
-• Baja Humedad: {estados['BAJA']}/{self.total_sensores}
-• Alta Humedad: {estados['ALTA']}/{self.total_sensores}
-
-RIEGO:
-Áreas regadas este mes: {self.historial_riego[-1] if self.historial_riego else 0}
-Total áreas: {self.num_areas}
-
-RANGO IDEAL: {self.humedad_ideal_min}% - {self.humedad_ideal_max}%"""
-        
-        # Dibujar fondo del panel
-        self.stats_canvas.create_rectangle(50, 50, 650, 450, 
-                                          fill='#4a7c1f', outline='#2d5016', width=3)
-        
-        # Dibujar texto
-        lines = stats_text.split('\n')
-        for i, line in enumerate(lines):
-            y_pos = 80 + i * 25
-            self.stats_canvas.create_text(100, y_pos, text=line, 
-                                         font=('Arial', 11, 'bold'), 
-                                         fill='white', anchor=tk.W)
-        
-        # Título
-        self.stats_canvas.create_text(350, 30, 
-                                     text="📈 ESTADÍSTICAS DETALLADAS", 
-                                     font=('Arial', 16, 'bold'), fill='white')
-    
     def verificar_alertas(self):
         """Verifica y muestra alertas si es necesario"""
         alertas_nuevas = []
         
-        # Verificar sensores con humedad crítica
+        # Verificar humedad crítica
         for sensor_id, data in self.datos_sensores.items():
-            if data['humedad'] < 50:  # Humedad muy baja crítica
-                alertas_nuevas.append(f"🚨 CRÍTICO: Sensor {sensor_id + 1} con humedad MUY BAJA ({data['humedad']}%)")
-            elif data['humedad'] > 90:  # Humedad muy alta crítica
-                alertas_nuevas.append(f"⚠️ ALERTA: Sensor {sensor_id + 1} con humedad MUY ALTA ({data['humedad']}%)")
+            if data['humedad'] < 50:
+                alertas_nuevas.append(f"🚨 Sensor {sensor_id + 1}: HUMEDAD MUY BAJA ({data['humedad']}%)")
+            elif data['humedad'] > 90:
+                alertas_nuevas.append(f"⚠️ Sensor {sensor_id + 1}: HUMEDAD MUY ALTA ({data['humedad']}%)")
         
-        # Mostrar alertas si hay nuevas
-        if alertas_nuevas:
-            mensaje_alerta = "\n".join(alertas_nuevas[:3])  # Mostrar máximo 3 alertas
-            if len(alertas_nuevas) > 3:
-                mensaje_alerta += f"\n\n... y {len(alertas_nuevas) - 3} alertas más"
+        # Verificar nivel de agua
+        if self.nivel_agua < 20:
+            alertas_nuevas.append("💧 PILETA: Nivel de agua crítico (<20%)")
+        
+        # Verificar condiciones para el plátano
+        if self.platano_sembrado:
+            # Verificar humedad promedio para el cultivo
+            humedades = [sensor['humedad'] for sensor in self.datos_sensores.values()]
+            humedad_promedio = sum(humedades) / len(humedades)
             
-            messagebox.showwarning("Alertas del Sistema", mensaje_alerta)
+            if humedad_promedio < self.humedad_ideal_min:
+                alertas_nuevas.append("🌱 CULTIVO: Humedad muy baja para el plátano")
+            elif humedad_promedio > self.humedad_ideal_max:
+                alertas_nuevas.append("🌱 CULTIVO: Humedad muy alta para el plátano")
+            
+            # Alertas de crecimiento
+            if self.etapa_crecimiento == 3:
+                alertas_nuevas.append("🎉 ¡PLÁTANOS LISTOS PARA COSECHAR! 🍌")
+        
+        # Mostrar alertas
+        if alertas_nuevas:
+            mensaje = "\n".join(alertas_nuevas[:5])  # Máximo 5 alertas
+            if len(alertas_nuevas) > 5:
+                mensaje += f"\n\n... y {len(alertas_nuevas) - 5} alertas más"
+            
+            messagebox.showwarning("Alertas del Sistema", mensaje)
 
 # Ejecutar la aplicación
 if __name__ == "__main__":
