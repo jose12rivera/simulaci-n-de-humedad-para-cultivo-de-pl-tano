@@ -915,9 +915,9 @@ RANGO IDEAL PARA PLÁTANO: {self.humedad_ideal_min}% - {self.humedad_ideal_max}%
         
         # Leyenda
         self.bar_canvas.create_text(canvas_width - 100, margin - 20, 
-                                   text="--- Mín Ideal", fill='blue', font=('Arial', 9))
+                                   text="=== Mín Ideal", fill='blue', font=('Arial', 9))
         self.bar_canvas.create_text(canvas_width - 100, margin, 
-                                   text="--- Máx Ideal", fill='red', font=('Arial', 9))
+                                   text="=== Máx Ideal", fill='red', font=('Arial', 9))
     
     def actualizar_grafico_pastel(self):
         """Actualiza el gráfico de pastel de estados de sensores"""
@@ -1079,9 +1079,9 @@ RANGO IDEAL PARA PLÁTANO: {self.humedad_ideal_min}% - {self.humedad_ideal_max}%
         
         # Leyenda
         self.pred_canvas.create_text(canvas_width - 100, margin - 20, 
-                                   text="--- Mín Ideal", fill='blue', font=('Arial', 9))
+                                   text="==== Mín Ideal", fill='blue', font=('Arial', 9))
         self.pred_canvas.create_text(canvas_width - 100, margin, 
-                                   text="--- Máx Ideal", fill='red', font=('Arial', 9))
+                                   text="=== Máx Ideal", fill='red', font=('Arial', 9))
         self.pred_canvas.create_text(canvas_width - 100, margin + 20, 
                                    text="● Histórico", fill='#4caf50', font=('Arial', 9))
         self.pred_canvas.create_text(canvas_width - 100, margin + 40, 
